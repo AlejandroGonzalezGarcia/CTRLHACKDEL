@@ -1,8 +1,7 @@
 const canvas = document.getElementById('canvas');
 const context = canvas.getContext('2d');
-const socket = new WebSocket('ws://' + window.location.host + '/ws/whiteboard/');
-document.addEventListener('DOMContentLoaded', clearCanvas);
-// Set up canvas dimensions
+
+// Ensure canvas dimensions adjust to container size
 function resizeCanvas() {
     const container = document.getElementById('whiteboardContainer');
     canvas.width = container.clientWidth;
@@ -14,56 +13,77 @@ window.addEventListener('resize', resizeCanvas);
 // Drawing state
 let drawing = false;
 let current = { x: 0, y: 0 };
-let color = '#000000'; // Default drawing color
-let isEraser = false;  // Eraser mode toggle
-let penSize = 2; // Default pen size
+let color = '#000000';
+let isEraser = false;
+let penSize = 2;
 
-// Event listeners for toolbar buttons
+// Pages management
+let pages = []; // Array to store each page's canvas data URL
+let currentPageIndex = 0;
+
+// Initialize with an empty page
+pages.push(null);
+
+// Tool button event listeners
 document.getElementById('penButton').addEventListener('click', () => {
-    isEraser = false;  // Switch to drawing mode
+    isEraser = false;
     setActiveTool('penButton');
+    console.log("Pen tool selected");
 });
 
 document.getElementById('eraserButton').addEventListener('click', () => {
-    isEraser = true;   // Switch to eraser mode
+    isEraser = true;
     setActiveTool('eraserButton');
+    console.log("Eraser tool selected");
 });
 
 document.getElementById('colorPicker').addEventListener('input', (event) => {
     color = event.target.value;
-    isEraser = false;  // Ensure we're in pen mode after color selection
+    isEraser = false;
     setActiveTool('penButton');
+    console.log("Color changed to", color);
 });
 
-// Change pen/eraser size
 document.getElementById('sizeSmall').addEventListener('click', () => {
-    penSize = 2;  // Small size
+    penSize = 2;
     setActiveSize('sizeSmall');
 });
 document.getElementById('sizeMedium').addEventListener('click', () => {
-    penSize = 5;  // Medium size
+    penSize = 5;
     setActiveSize('sizeMedium');
 });
 document.getElementById('sizeLarge').addEventListener('click', () => {
-    penSize = 10; // Large size
+    penSize = 10;
     setActiveSize('sizeLarge');
 });
 
 // Clear button functionality
-document.getElementById('clearButton').addEventListener('click', clearCanvas);
+document.getElementById('clearButton').addEventListener('click', () => {
+    clearCanvas();
+    console.log("Canvas cleared");
+});
 
-// Save button functionality
-document.getElementById('saveImageButton').addEventListener('click', saveAsImage);
+// Save image button functionality
+document.getElementById('saveImageButton').addEventListener('click', () => {
+    saveAsImage();
+    console.log("Image saved");
+});
 
-// Event listeners for drawing on the canvas
+// Page navigation buttons
+document.getElementById('prevPageButton').addEventListener('click', prevPage);
+document.getElementById('nextPageButton').addEventListener('click', nextPage);
+
+// Canvas drawing event listeners
 canvas.addEventListener('mousedown', (e) => {
     drawing = true;
     current.x = e.clientX - canvas.offsetLeft;
     current.y = e.clientY - canvas.offsetTop;
+    console.log("Mouse down at", current.x, current.y);
 });
 
 canvas.addEventListener('mouseup', () => {
     drawing = false;
+    console.log("Mouse up, drawing ended");
 });
 
 canvas.addEventListener('mousemove', (e) => {
@@ -72,84 +92,90 @@ canvas.addEventListener('mousemove', (e) => {
     const y0 = current.y;
     const x1 = e.clientX - canvas.offsetLeft;
     const y1 = e.clientY - canvas.offsetTop;
-    drawLine(x0, y0, x1, y1, isEraser ? '#FFFFFF' : color, true); // Use white for erasing
+    drawLine(x0, y0, x1, y1, isEraser ? '#FFFFFF' : color);
     current.x = x1;
     current.y = y1;
+    console.log("Drawing line to", x1, y1);
 });
 
-// Function to draw on the canvas and emit data
-function drawLine(x0, y0, x1, y1, color, emit) {
+// Function to draw on the canvas
+function drawLine(x0, y0, x1, y1, color) {
+    console.log(`Drawing line from (${x0}, ${y0}) to (${x1}, ${y1}) with color ${color} and width ${isEraser ? penSize * 2 : penSize}`);
     context.beginPath();
     context.moveTo(x0, y0);
     context.lineTo(x1, y1);
     context.strokeStyle = color;
-    context.lineWidth = isEraser ? penSize * 2 : penSize;  // Adjust size based on the selected tool
+    context.lineWidth = penSize; // The same penSize is used for both pen and eraser
     context.stroke();
     context.closePath();
+}
 
-    if (!emit) return;
+// Function to save the current page
+function saveCurrentPage() {
+    pages[currentPageIndex] = canvas.toDataURL();
+    console.log("Page saved at index", currentPageIndex);
+}
 
-    const w = canvas.width;
-    const h = canvas.height;
-    socket.send(JSON.stringify({
-        type: 'draw',
-        x0: x0 / w,
-        y0: y0 / h,
-        x1: x1 / w,
-        y1: y1 / h,
-        color: color,
-    }));
+// Function to load a page onto the canvas
+function loadPage(pageIndex) {
+    clearCanvas(); // Clear current canvas
+    const pageData = pages[pageIndex];
+    if (pageData) {
+        const img = new Image();
+        img.src = pageData;
+        img.onload = () => context.drawImage(img, 0, 0, canvas.width, canvas.height);
+        console.log("Page loaded at index", pageIndex);
+    } else {
+        console.log("New blank page at index", pageIndex);
+    }
+}
+
+// Page navigation functions
+function prevPage() {
+    saveCurrentPage();
+    if (currentPageIndex > 0) {
+        currentPageIndex--;
+        loadPage(currentPageIndex);
+    }
+}
+
+function nextPage() {
+    saveCurrentPage();
+    if (currentPageIndex < pages.length - 1) {
+        currentPageIndex++;
+    } else {
+        pages.push(null);
+        currentPageIndex++;
+    }
+    loadPage(currentPageIndex);
 }
 
 // Function to clear the canvas
 function clearCanvas() {
-    context.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas content
-
-    // Notify other users via WebSocket
-    socket.send(JSON.stringify({
-        type: 'clear'
-    }));
+    context.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-// Handle incoming drawing data from WebSocket
-socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    
-    if (data.type === 'clear') {
-        context.clearRect(0, 0, canvas.width, canvas.height);
-    } else if (data.type === 'draw') {
-        const w = canvas.width;
-        const h = canvas.height;
-        drawLine(data.x0 * w, data.y0 * h, data.x1 * w, data.y1 * h, data.color);
-    }
-};
-
-// Function to save canvas content as an image
+// Function to save canvas as an image
 function saveAsImage() {
-    const image = canvas.toDataURL('image/png'); // Convert canvas to PNG image data
-    const link = document.createElement('a'); // Create a temporary download link
+    const image = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
     link.href = image;
-    link.download = 'whiteboard.png'; // Set the download name for the image
-    link.click(); // Trigger the download
+    link.download = 'whiteboard.png';
+    link.click();
 }
 
 // Set the active tool in the toolbar
 function setActiveTool(toolId) {
-    // Remove active class from all tools
     document.getElementById('penButton').classList.remove('active');
     document.getElementById('eraserButton').classList.remove('active');
-    document.getElementById('sizeSmall').classList.remove('active');
-    document.getElementById('sizeMedium').classList.remove('active');
-    document.getElementById('sizeLarge').classList.remove('active');
-
-    // Add active class to the clicked tool
     document.getElementById(toolId).classList.add('active');
 }
 
-// Set the active size for pen size tools
+// Set the active size for pen and eraser size tools
 function setActiveSize(sizeId) {
     document.getElementById('sizeSmall').classList.remove('active');
     document.getElementById('sizeMedium').classList.remove('active');
     document.getElementById('sizeLarge').classList.remove('active');
     document.getElementById(sizeId).classList.add('active');
+    context.lineWidth = penSize; // Set the penSize for both pen and eraser
 }
