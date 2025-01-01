@@ -28,7 +28,7 @@ Key Features
 - Enhanced collaboration through intuitive design and user-friendly features.
 
 # Team
-- Alejeandro Gonzalez-Garcia
+- Alejandro Gonzalez-Garcia
 - Dhyan Thakar
 - Jayce Scott
 
