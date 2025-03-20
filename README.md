@@ -29,7 +29,7 @@ Key Features
 
 # Team
 - Alejandro Gonzalez-Garcia
-- Dhyan Thakar
+- Dhyan Thakkar
 - Jayce Scott
 
 
